@@ -1,7 +1,6 @@
 package Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.controller;
 
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.ComplaintDto;
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.FileComplaintRequest;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.*;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.service.ComplaintService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +28,8 @@ public class ComplaintController {
         }
         throw new IllegalStateException("Unauthenticated user context");
     }
+
+    // ─── Phase 3: Filing & Retrieval ────────────────────────────────────
 
     @PostMapping
     @PreAuthorize("hasRole('CITIZEN')")
@@ -74,5 +75,54 @@ public class ComplaintController {
         UUID userId = getUserIdFromAuth(authentication);
         ComplaintDto complaint = complaintService.getComplaintById(id, userId);
         return ResponseEntity.ok(complaint);
+    }
+
+    // ─── Phase 4: Assignment & Status ───────────────────────────────────
+
+    @PatchMapping("/{id}/assign")
+    @PreAuthorize("hasRole('DEPT_HEAD')")
+    public ResponseEntity<ComplaintDto> assignOfficer(
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignOfficerRequest request,
+            Authentication authentication
+    ) {
+        UUID deptHeadId = getUserIdFromAuth(authentication);
+        ComplaintDto updated = complaintService.assignOfficer(id, request.getOfficerId(), deptHeadId);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PatchMapping("/{id}/reassign")
+    @PreAuthorize("hasRole('DEPT_HEAD')")
+    public ResponseEntity<ComplaintDto> reassignOfficer(
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignOfficerRequest request,
+            Authentication authentication
+    ) {
+        UUID deptHeadId = getUserIdFromAuth(authentication);
+        ComplaintDto updated = complaintService.reassignOfficer(id, request.getOfficerId(), deptHeadId);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('OFFICER', 'DEPT_HEAD', 'SUPER_ADMIN')")
+    public ResponseEntity<ComplaintDto> updateStatus(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateStatusRequest request,
+            Authentication authentication
+    ) {
+        UUID actingUserId = getUserIdFromAuth(authentication);
+        ComplaintDto updated = complaintService.updateStatus(id, request.getNewStatus(), request.getRemarks(), actingUserId);
+        return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/{id}/timeline")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ComplaintUpdateDto>> getTimeline(
+            @PathVariable UUID id,
+            Authentication authentication
+    ) {
+        UUID userId = getUserIdFromAuth(authentication);
+        List<ComplaintUpdateDto> timeline = complaintService.getTimeline(id, userId);
+        return ResponseEntity.ok(timeline);
     }
 }
