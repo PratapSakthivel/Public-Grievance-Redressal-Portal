@@ -333,6 +333,9 @@ public class ComplaintService {
     }
 
     private void validateDeptHeadScope(User deptHead, Complaint complaint) {
+        if (deptHead.getRole() == Role.SUPER_ADMIN) {
+            return; // Super admin can manage complaints across all departments
+        }
         if (deptHead.getDepartment() == null || complaint.getDepartment() == null ||
                 !deptHead.getDepartment().getId().equals(complaint.getDepartment().getId())) {
             throw new AccessDeniedException("Department Heads can only manage complaints in their own department");
@@ -340,24 +343,9 @@ public class ComplaintService {
     }
 
     private void enforceReadAccess(Complaint complaint, UUID requestingUserId) {
-        User requestingUser = getUserOrThrow(requestingUserId);
-        Role role = requestingUser.getRole();
-
-        if (role == Role.CITIZEN) {
-            if (!complaint.getCitizen().getId().equals(requestingUserId)) {
-                throw new AccessDeniedException("Citizens are only allowed to view their own complaints");
-            }
-        } else if (role == Role.DEPT_HEAD) {
-            if (requestingUser.getDepartment() == null || complaint.getDepartment() == null ||
-                    !complaint.getDepartment().getId().equals(requestingUser.getDepartment().getId())) {
-                throw new AccessDeniedException("Department Heads can only view complaints belonging to their department");
-            }
-        } else if (role == Role.OFFICER) {
-            if (complaint.getAssignedOfficer() == null || !complaint.getAssignedOfficer().getId().equals(requestingUserId)) {
-                throw new AccessDeniedException("Officers can only view complaints assigned to them");
-            }
-        }
-        // SUPER_ADMIN sees all
+        // All authenticated users (Citizens, Officers, Dept Heads, Super Admins)
+        // are allowed to view public grievance details and timeline.
+        getUserOrThrow(requestingUserId);
     }
 
     private void recordUpdate(Complaint complaint, User actor, Status oldStatus, Status newStatus, String remarks) {

@@ -84,7 +84,7 @@ public class ComplaintController {
     // ─── Phase 4: Assignment & Status ───────────────────────────────────
 
     @PatchMapping("/{id}/assign")
-    @PreAuthorize("hasRole('DEPT_HEAD')")
+    @PreAuthorize("hasAnyRole('DEPT_HEAD', 'SUPER_ADMIN')")
     public ResponseEntity<ComplaintDto> assignOfficer(
             @PathVariable UUID id,
             @Valid @RequestBody AssignOfficerRequest request,
@@ -96,7 +96,7 @@ public class ComplaintController {
     }
 
     @PatchMapping("/{id}/reassign")
-    @PreAuthorize("hasRole('DEPT_HEAD')")
+    @PreAuthorize("hasAnyRole('DEPT_HEAD', 'SUPER_ADMIN')")
     public ResponseEntity<ComplaintDto> reassignOfficer(
             @PathVariable UUID id,
             @Valid @RequestBody AssignOfficerRequest request,

@@ -16,6 +16,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -28,18 +33,44 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**", "/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/complaints/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/departments").authenticated()
-                        .requestMatchers("/departments/**", "/users/**").hasRole("SUPER_ADMIN")
+                        // More specific rules FIRST — DEPT_HEAD officer creation before SUPER_ADMIN wildcard
+                        .requestMatchers(HttpMethod.POST, "/users/officers").hasRole("DEPT_HEAD")
+                        .requestMatchers(HttpMethod.GET, "/users").hasAnyRole("DEPT_HEAD", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/users/**").hasAnyRole("DEPT_HEAD", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/users").hasRole("SUPER_ADMIN")
+                        .requestMatchers("/departments/**").hasRole("SUPER_ADMIN")
+                        .requestMatchers("/users/**").hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        // Allow Angular dev server and any Vercel deployment
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:4200",
+                "http://localhost:3000",
+                "https://*.vercel.app"
+        ));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     @Bean

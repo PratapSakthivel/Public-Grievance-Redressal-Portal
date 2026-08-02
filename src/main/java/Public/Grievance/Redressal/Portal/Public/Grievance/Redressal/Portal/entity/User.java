@@ -35,6 +35,8 @@ public class User {
     @Column(name = "role", columnDefinition = "role", nullable = false)
     private Role role;
 
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
     private Department department;

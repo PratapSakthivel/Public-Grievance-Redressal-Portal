@@ -24,6 +24,8 @@ public class Department {
     @Column(columnDefinition = "text")
     private String description;
 
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dept_head_id")
     private User deptHead;
