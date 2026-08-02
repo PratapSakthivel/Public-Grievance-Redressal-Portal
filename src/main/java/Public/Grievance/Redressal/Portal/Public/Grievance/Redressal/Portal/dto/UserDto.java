@@ -20,6 +20,7 @@ public class UserDto {
     private String email;
     private Role role;
     private UUID departmentId;
+    private String departmentName;
 
     public static UserDto fromEntity(User user) {
         return UserDto.builder()
@@ -28,6 +29,7 @@ public class UserDto {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .departmentId(user.getDepartment() != null ? user.getDepartment().getId() : null)
+                .departmentName(user.getDepartment() != null ? user.getDepartment().getName() : null)
                 .build();
     }
 }
