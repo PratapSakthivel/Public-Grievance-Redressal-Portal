@@ -32,6 +32,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**", "/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/complaints/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/departments").authenticated()
                         .requestMatchers("/departments/**", "/users/**").hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()

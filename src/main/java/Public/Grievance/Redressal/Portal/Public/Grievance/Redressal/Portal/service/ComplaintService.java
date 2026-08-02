@@ -1,28 +1,36 @@
 package Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.service;
 
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.ComplaintDto;
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.ComplaintUpdateDto;
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.FileComplaintRequest;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.*;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entity.Complaint;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entity.ComplaintUpdate;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entity.ComplaintUpvote;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entity.Department;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entity.User;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Category;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Priority;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Role;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Status;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.exception.DuplicateResourceException;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.exception.InvalidRoleException;
-import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.exception.InvalidStatusTransitionException;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.exception.ResourceNotFoundException;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.repository.ComplaintRepository;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.repository.ComplaintUpdateRepository;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.repository.ComplaintUpvoteRepository;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.repository.UserRepository;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.util.CategoryDepartmentMapper;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.util.ComplaintStatusValidator;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,13 +41,22 @@ public class ComplaintService {
 
     private final ComplaintRepository complaintRepository;
     private final ComplaintUpdateRepository complaintUpdateRepository;
+    private final ComplaintUpvoteRepository complaintUpvoteRepository;
     private final UserRepository userRepository;
     private final CategoryDepartmentMapper categoryDepartmentMapper;
     private final ComplaintStatusValidator statusValidator;
 
     // ────────────────────────────────────────────────────────────
-    // Phase 3: Filing & Retrieval
+    // Phase 3 & Phase 5: Filing, Duplicate Checking & Retrieval
     // ────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<PublicComplaintDto> checkForSimilarComplaints(Category category, String pincode) {
+        List<Status> openStatuses = List.of(Status.FILED, Status.ASSIGNED, Status.IN_PROGRESS);
+        return complaintRepository.findByCategoryAndPincodeAndStatusIn(category, pincode, openStatuses).stream()
+                .map(PublicComplaintDto::fromEntity)
+                .collect(Collectors.toList());
+    }
 
     @Transactional
     public ComplaintDto fileComplaint(UUID citizenId, FileComplaintRequest request) {
@@ -48,7 +65,7 @@ public class ComplaintService {
 
         Department department = categoryDepartmentMapper.getDepartmentForCategory(request.getCategory());
 
-        // TODO: Phase 5 duplicate detection (category + pincode match) with upvote prompt
+        // Phase 5 duplicate detection: citizen checks similar complaints before submitting via checkForSimilarComplaints
 
         Complaint complaint = Complaint.builder()
                 .citizen(citizen)
@@ -105,7 +122,7 @@ public class ComplaintService {
     }
 
     // ────────────────────────────────────────────────────────────
-    // Phase 4: Assignment Workflow
+    // Phase 4: Assignment Workflow & Status Updates
     // ────────────────────────────────────────────────────────────
 
     @Transactional
@@ -114,20 +131,16 @@ public class ComplaintService {
         User deptHead = getUserOrThrow(actingDeptHeadId);
         User officer = getUserOrThrow(officerId);
 
-        // Dept head can only assign within their own department
         validateDeptHeadScope(deptHead, complaint);
 
-        // Target officer must have OFFICER role
         if (officer.getRole() != Role.OFFICER) {
             throw new InvalidRoleException("Target user is not an Officer");
         }
 
-        // Officer must belong to the same department as the complaint
         if (officer.getDepartment() == null || !officer.getDepartment().getId().equals(complaint.getDepartment().getId())) {
             throw new IllegalArgumentException("Officer does not belong to the same department as this complaint");
         }
 
-        // assignOfficer only valid from FILED status
         if (complaint.getStatus() != Status.FILED) {
             throw new IllegalArgumentException(
                     "Cannot assign: complaint is in status " + complaint.getStatus() +
@@ -163,7 +176,6 @@ public class ComplaintService {
             throw new IllegalArgumentException("Officer does not belong to the same department as this complaint");
         }
 
-        // reassignOfficer only allowed from ASSIGNED or IN_PROGRESS
         Status currentStatus = complaint.getStatus();
         if (currentStatus != Status.ASSIGNED && currentStatus != Status.IN_PROGRESS) {
             throw new IllegalArgumentException(
@@ -176,7 +188,6 @@ public class ComplaintService {
         complaint.setAssignedOfficer(newOfficer);
         Complaint saved = complaintRepository.save(complaint);
 
-        // Status unchanged on reassignment — record old_status = new_status = current
         recordUpdate(saved, deptHead, currentStatus, currentStatus,
                 "Reassigned from " + oldOfficerName + " to " + newOfficer.getName());
 
@@ -188,7 +199,6 @@ public class ComplaintService {
         Complaint complaint = getComplaintOrThrow(complaintId);
         User actor = getUserOrThrow(actingUserId);
 
-        // Validate acting user is authorized to update this complaint's status
         Role role = actor.getRole();
         if (role == Role.OFFICER) {
             if (complaint.getAssignedOfficer() == null || !complaint.getAssignedOfficer().getId().equals(actingUserId)) {
@@ -199,7 +209,6 @@ public class ComplaintService {
         } else if (role == Role.CITIZEN) {
             throw new AccessDeniedException("Citizens are not allowed to update complaint status");
         }
-        // SUPER_ADMIN can update any
 
         Status oldStatus = complaint.getStatus();
         statusValidator.validate(oldStatus, newStatus);
@@ -220,6 +229,93 @@ public class ComplaintService {
         return complaintUpdateRepository.findByComplaintIdOrderByCreatedAtAsc(complaintId).stream()
                 .map(ComplaintUpdateDto::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 5: Upvoting, Public Feed & Detailed View
+    // ────────────────────────────────────────────────────────────
+
+    @Transactional
+    public Integer upvoteComplaint(UUID complaintId, UUID citizenId) {
+        Complaint complaint = getComplaintOrThrow(complaintId);
+
+        if (complaint.getCitizen().getId().equals(citizenId)) {
+            throw new IllegalArgumentException("Citizens cannot upvote their own complaints");
+        }
+
+        if (complaintUpvoteRepository.existsByComplaintIdAndCitizenId(complaintId, citizenId)) {
+            throw new DuplicateResourceException("You have already upvoted this complaint");
+        }
+
+        User citizen = getUserOrThrow(citizenId);
+        ComplaintUpvote upvote = ComplaintUpvote.builder()
+                .complaint(complaint)
+                .citizen(citizen)
+                .build();
+        complaintUpvoteRepository.save(upvote);
+
+        int newCount = (complaint.getUpvoteCount() == null ? 0 : complaint.getUpvoteCount()) + 1;
+        complaint.setUpvoteCount(newCount);
+        complaintRepository.save(complaint);
+
+        return newCount;
+    }
+
+    @Transactional
+    public Integer removeUpvote(UUID complaintId, UUID citizenId) {
+        Complaint complaint = getComplaintOrThrow(complaintId);
+
+        ComplaintUpvote upvote = complaintUpvoteRepository.findByComplaintIdAndCitizenId(complaintId, citizenId)
+                .orElseThrow(() -> new ResourceNotFoundException("Upvote not found for this complaint"));
+
+        complaintUpvoteRepository.delete(upvote);
+
+        int currentCount = complaint.getUpvoteCount() == null ? 0 : complaint.getUpvoteCount();
+        int newCount = Math.max(0, currentCount - 1);
+        complaint.setUpvoteCount(newCount);
+        complaintRepository.save(complaint);
+
+        return newCount;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PublicComplaintDto> getPublicFeed(Category category, String pincode, Status status, int page, int size) {
+        Specification<Complaint> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (category != null) {
+                predicates.add(cb.equal(root.get("category"), category));
+            }
+            if (pincode != null && !pincode.isBlank()) {
+                predicates.add(cb.equal(root.get("pincode"), pincode));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("upvoteCount"), Sort.Order.desc("createdAt")));
+        return complaintRepository.findAll(spec, pageable)
+                .map(PublicComplaintDto::fromEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public ComplaintDetailDto getComplaintDetail(UUID complaintId, UUID requestingUserId) {
+        ComplaintDto complaintDto = getComplaintById(complaintId, requestingUserId);
+        List<ComplaintUpdateDto> timeline = getTimeline(complaintId, requestingUserId);
+
+        User requestingUser = getUserOrThrow(requestingUserId);
+        boolean hasUpvoted = false;
+
+        if (requestingUser.getRole() == Role.CITIZEN) {
+            hasUpvoted = complaintUpvoteRepository.existsByComplaintIdAndCitizenId(complaintId, requestingUserId);
+        }
+
+        return ComplaintDetailDto.builder()
+                .complaint(complaintDto)
+                .timeline(timeline)
+                .hasUpvoted(hasUpvoted)
+                .build();
     }
 
     // ────────────────────────────────────────────────────────────

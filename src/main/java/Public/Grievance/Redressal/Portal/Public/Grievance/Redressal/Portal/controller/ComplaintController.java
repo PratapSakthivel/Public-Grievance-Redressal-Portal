@@ -1,15 +1,19 @@
 package Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.controller;
 
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.dto.*;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Category;
+import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Status;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.service.ComplaintService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -124,5 +128,68 @@ public class ComplaintController {
         UUID userId = getUserIdFromAuth(authentication);
         List<ComplaintUpdateDto> timeline = complaintService.getTimeline(id, userId);
         return ResponseEntity.ok(timeline);
+    }
+
+    // ─── Phase 5: Citizen-Facing Features ────────────────────────────────
+
+    @GetMapping("/check-duplicates")
+    @PreAuthorize("hasRole('CITIZEN')")
+    public ResponseEntity<List<PublicComplaintDto>> checkDuplicates(
+            @RequestParam Category category,
+            @RequestParam String pincode
+    ) {
+        List<PublicComplaintDto> similar = complaintService.checkForSimilarComplaints(category, pincode);
+        return ResponseEntity.ok(similar);
+    }
+
+    @PostMapping("/{id}/upvote")
+    @PreAuthorize("hasRole('CITIZEN')")
+    public ResponseEntity<Map<String, Object>> upvoteComplaint(
+            @PathVariable UUID id,
+            Authentication authentication
+    ) {
+        UUID citizenId = getUserIdFromAuth(authentication);
+        Integer updatedCount = complaintService.upvoteComplaint(id, citizenId);
+        return ResponseEntity.ok(Map.of(
+                "complaintId", id,
+                "upvoteCount", updatedCount
+        ));
+    }
+
+    @DeleteMapping("/{id}/upvote")
+    @PreAuthorize("hasRole('CITIZEN')")
+    public ResponseEntity<Map<String, Object>> removeUpvote(
+            @PathVariable UUID id,
+            Authentication authentication
+    ) {
+        UUID citizenId = getUserIdFromAuth(authentication);
+        Integer updatedCount = complaintService.removeUpvote(id, citizenId);
+        return ResponseEntity.ok(Map.of(
+                "complaintId", id,
+                "upvoteCount", updatedCount
+        ));
+    }
+
+    @GetMapping("/public")
+    public ResponseEntity<Page<PublicComplaintDto>> getPublicFeed(
+            @RequestParam(required = false) Category category,
+            @RequestParam(required = false) String pincode,
+            @RequestParam(required = false) Status status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<PublicComplaintDto> publicFeed = complaintService.getPublicFeed(category, pincode, status, page, size);
+        return ResponseEntity.ok(publicFeed);
+    }
+
+    @GetMapping("/{id}/detail")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ComplaintDetailDto> getComplaintDetail(
+            @PathVariable UUID id,
+            Authentication authentication
+    ) {
+        UUID userId = getUserIdFromAuth(authentication);
+        ComplaintDetailDto detail = complaintService.getComplaintDetail(id, userId);
+        return ResponseEntity.ok(detail);
     }
 }

@@ -4,13 +4,14 @@ import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.entit
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Category;
 import Public.Grievance.Redressal.Portal.Public.Grievance.Redressal.Portal.enums.Status;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface ComplaintRepository extends JpaRepository<Complaint, UUID> {
+public interface ComplaintRepository extends JpaRepository<Complaint, UUID>, JpaSpecificationExecutor<Complaint> {
 
     List<Complaint> findByCitizenIdOrderByCreatedAtDesc(UUID citizenId);
 
